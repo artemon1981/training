@@ -1,7 +1,22 @@
 from django.db import models
 from django.core.validators import FileExtensionValidator
 from django.contrib.auth.models import User
+from django.urls import reverse
 from mptt.models import MPTTModel, TreeForeignKey
+
+from apps.services.utils import unique_slugify
+
+
+class PostManager(models.Manager):
+    """
+    Кастомный менеджер для модели постов
+    """
+
+    def all(self):
+        """
+        Список постов (SQL запрос с фильтрацией по статусу опубликованно)
+        """
+        return self.get_queryset().select_related('author', 'category').filter(status='published')
 
 
 class Category(MPTTModel):
@@ -35,6 +50,12 @@ class Category(MPTTModel):
         verbose_name_plural = 'Категории'
         db_table = 'app_categories'
 
+    def get_absolute_url(self):
+        """
+        Получаем прямую ссылку на категорию
+        """
+        return reverse('post_by_category', kwargs={'slug': self.slug})
+
     def __str__(self):
         """
         Возвращение заголовка статьи
@@ -53,7 +74,7 @@ class Post(models.Model):
     )
 
     title = models.CharField(verbose_name='Название записи', max_length=255)
-    slug = models.SlugField(verbose_name='URL', max_length=255, blank=True, unique=True)
+    slug = models.SlugField(verbose_name='URL', max_length=255, blank=True)
     description = models.TextField(verbose_name='Краткое описание', max_length=500)
     text = models.TextField(verbose_name='Полный текст записи')
     category = TreeForeignKey('Category', on_delete=models.PROTECT, related_name='posts', verbose_name='Категория')
@@ -73,6 +94,9 @@ class Post(models.Model):
                                 related_name='updater_posts', blank=True)
     fixed = models.BooleanField(verbose_name='Прикреплено', default=False)
 
+    objects = models.Manager()
+    custom = PostManager()
+
     class Meta:
         db_table = 'blog_post'
         ordering = ['-fixed', '-create']
@@ -82,3 +106,16 @@ class Post(models.Model):
 
     def __str__(self):
         return self.title
+
+    def get_absolute_url(self):
+        """
+        Получаем прямую ссылку на статью
+        """
+        return reverse('post_detail', kwargs={'slug': self.slug})
+
+    def save(self, *args, **kwargs):
+        """
+        Сохранение полей модели при их отсутствии заполнения
+        """
+        self.slug = unique_slugify(self, self.title)
+        super().save(*args, **kwargs)
